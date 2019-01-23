@@ -2,10 +2,17 @@ import argparse
 import logging
 import os, pathlib, platform, shutil, sys, time
 import keyring, sharepy
+from datetime import datetime
+
+
+FULL_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+YEAR_MONTH_FORMAT = "%Y-%m"
+
 
 def main():
     start_timestamp = time.time()
-    logging.info("Starting up (platform: %s, current timestamp: %s (date: %s)", platform.system(), start_timestamp, time.ctime(start_timestamp))
+    logging.info("Starting up (platform: %s, current timestamp: %s (UTC: %s)",
+                 platform.system(), start_timestamp, timestamp_to_string(start_timestamp, FULL_DATETIME_FORMAT))
     args = parse_args()
     logging.info("Arguments: %s", args)
 
@@ -15,7 +22,8 @@ def main():
 
     # choose files meeting criteria (i.e. old files)
     maximum_timestamp = start_timestamp - days_to_seconds(args.days)
-    logging.info("Filtering out files with creation date after %f (date: %s)", maximum_timestamp, time.ctime(maximum_timestamp))
+    logging.info("Filtering out files with creation date after %f (UTC: %s)",
+                 maximum_timestamp, timestamp_to_string(maximum_timestamp, FULL_DATETIME_FORMAT))
     oldfile_names = filter_old_files(filenames, maximum_timestamp)
     logging.info("Found %s files older than %s days", len(oldfile_names), args.days)
 
@@ -32,9 +40,18 @@ def main():
     # upload from working folder to Sharepoint
     selected_filenames = find_files(args.working_dir)
     logging.info("Found %s files under working directory: %s", len(selected_filenames), args.working_dir)
-    upload_to_sharepoint(selected_filenames, args.sharepoint_host, args.sharepoint_site, args.sharepoint_library, args.user, args.delete)
+    uploaded_filenames = upload_to_sharepoint(
+        selected_filenames, args.sharepoint_host, args.sharepoint_site, args.sharepoint_library, args.user
+    )
 
-    # delete files from working folder
+    # delete uploaded files from working folder
+    if args.delete:
+        logging.info("%s files uploaded successfully will be deleted now", len(uploaded_filenames))
+        delete_files(uploaded_filenames)
+    else:
+        logging.info("NO DELETE mode - uploaded files will remain in working folder")
+
+    logging.info("All done - thank you and bye bye!")
 
 def find_files(dir_name):
     filenames = []
@@ -63,7 +80,7 @@ def move_files(filenames, base_dir, target_dir):
         shutil.move(filename, target_filename)
 
 
-def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint_library, user, delete_flag):
+def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint_library, user):
     logging.info("Using SharePoint host %s, site %s, library %s", sharepoint_host, sharepoint_site, sharepoint_library)
     password = keyring.get_password(sharepoint_host, user)
     if password is None:
@@ -79,23 +96,51 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
 
     successful_upload_count = 0
     failed_upload_count = 0
+    created_folders = set()
+    uploaded_filenames = []
     for filename in filenames:
         filename_object = pathlib.Path(filename)
         with open(filename_object, 'rb') as read_file:
             content = read_file.read()
+        folder_name = timestamp_to_string(creation_date(filename), YEAR_MONTH_FORMAT)
+        relative_target = sharepoint_library +'/' + folder_name
 
-        p = s.post(f"https://{sharepoint_host}/sites/{sharepoint_site}/_api/web/getFolderByServerRelativeUrl('{sharepoint_library}')/Files/add(url='{filename_object.name}', overwrite=true)", data=content, headers=headers)
-        if p.status_code != 200 and p.status_code != 204:
+        if relative_target not in created_folders:
+            p = s.post(f"https://{sharepoint_host}/sites/{sharepoint_site}/_api/web/folders",
+                json={
+                    "__metadata": { "type": "SP.Folder" },
+                    "ServerRelativeUrl": relative_target
+                })
+            if p.status_code < 200 or p.status_code >= 300:
+                logging.error("ERROR: Post to create folder %s resulted in status %s",
+                              relative_target, p.status_code)
+                failed_upload_count += 1
+                continue
+            else:
+                created_folders.add(relative_target)
+                logging.info("OK: Post to create folder %s resulted in status %s", relative_target, p.status_code)
+
+        p = s.post(f"https://{sharepoint_host}/sites/{sharepoint_site}/_api/web/getFolderByServerRelativeUrl('{sharepoint_library}/{folder_name}')/Files//add(url='{filename_object.name}', overwrite=true)", data=content, headers=headers)
+        if p.status_code < 200 or p.status_code >= 300:
             logging.error("ERROR: Post for file %s resulted in status %s", filename, p.status_code)
             failed_upload_count += 1
-        elif p.status_code == 200 or p.status_code == 204:
+        else:
             logging.info("OK: Post for file %s resulted in status %s", filename, p.status_code)
             successful_upload_count += 1
-            if delete_flag:
-                logging.info("Removing file %s", filename)
-                filename_object.unlink()
+            uploaded_filenames.append(filename)
 
     logging.info("Successful uploads: %s, failed uploads: %s", successful_upload_count, failed_upload_count)
+    return uploaded_filenames
+
+
+def delete_files(filenames):
+    for filename in filenames:
+        pathlib.Path(filename).unlink()
+
+
+def timestamp_to_string(timestamp, date_format):
+    return datetime.utcfromtimestamp(timestamp).strftime(date_format)
+
 
 def days_to_seconds(days):
     return float(days) * 60 * 60 * 24
