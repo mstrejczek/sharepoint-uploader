@@ -22,10 +22,10 @@ def main():
 
     # choose files meeting criteria (i.e. old files)
     maximum_timestamp = start_timestamp - days_to_seconds(args.days)
-    logging.info("Filtering out files with creation date after %f (UTC: %s)",
+    logging.info("Filtering out files with modification date after %f (UTC: %s)",
                  maximum_timestamp, timestamp_to_string(maximum_timestamp, FULL_DATETIME_FORMAT))
     oldfile_names = filter_old_files(filenames, maximum_timestamp)
-    logging.info("Found %s files older than %s days", len(oldfile_names), args.days)
+    logging.info("Found %s files modified more than %s days ago", len(oldfile_names), args.days)
 
     if args.dry_run:
         logging.info("DRY RUN mode - listing files")
@@ -53,6 +53,7 @@ def main():
 
     logging.info("All done - thank you and bye bye!")
 
+
 def find_files(dir_name):
     filenames = []
 
@@ -62,8 +63,9 @@ def find_files(dir_name):
 
     return filenames
 
+
 def filter_old_files(filenames, maximum_timestamp):
-    return [filename for filename in filenames if creation_date(filename) < maximum_timestamp]
+    return [filename for filename in filenames if modification_date(filename) < maximum_timestamp]
 
 
 def move_files(filenames, base_dir, target_dir):
@@ -102,7 +104,7 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
         filename_object = pathlib.Path(filename)
         with open(filename_object, 'rb') as read_file:
             content = read_file.read()
-        folder_name = timestamp_to_string(creation_date(filename), YEAR_MONTH_FORMAT)
+        folder_name = timestamp_to_string(modification_date(filename), YEAR_MONTH_FORMAT)
         relative_target = sharepoint_library +'/' + folder_name
 
         if relative_target not in created_folders:
@@ -146,32 +148,22 @@ def days_to_seconds(days):
     return float(days) * 60 * 60 * 24
 
 
-def creation_date(path_to_file):
-    """
-    Try to get the date that a file was created, falling back to when it was
-    last modified if that isn't possible.
-    See http://stackoverflow.com/a/39501288/1709587 for explanation.
-    """
-    if platform.system() == 'Windows':
-        return os.path.getctime(path_to_file)
-    else:
-        stat = os.stat(path_to_file)
-        try:
-            return stat.st_birthtime
-        except AttributeError:
-            # We're probably on Linux. No easy way to get creation dates here,
-            # so we'll settle for when its content was last modified.
-            return stat.st_mtime
+def modification_date(path_to_file):
+    return os.path.getmtime(path_to_file)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Upload files that meet criteria to SharePoint.')
     parser.add_argument('--input_dir', '-i', required=True, type=str, help='Directory to look for files in')
     parser.add_argument('--working_dir', '-w', required=True, type=str, help='Directory to use as working directory')
-    parser.add_argument('--sharepoint_host', '-sh', required=True, type=str, help='SharePoint host (e.g. example.sharepoint.com)')
-    parser.add_argument('--sharepoint_site', '-ss', required=True, type=str, help='Name of SharePoint site to upload files to')
-    parser.add_argument('--sharepoint_library', '-sl', required=True, type=str, help='Name of SharePoint library to upload files to')
-    parser.add_argument('--days', '-d', required=True, type=str, help='Only files older than that many days are uploaded')
+    parser.add_argument('--sharepoint_host', '-sh', required=True, type=str,
+                        help='SharePoint host (e.g. example.sharepoint.com)')
+    parser.add_argument('--sharepoint_site', '-ss', required=True, type=str,
+                        help='Name of SharePoint site to upload files to')
+    parser.add_argument('--sharepoint_library', '-sl', required=True, type=str,
+                        help='Name of SharePoint library to upload files to')
+    parser.add_argument('--days', '-d', required=True, type=str,
+                        help='Only files modified more than that many days are uploaded')
     parser.add_argument('--user', '-u', required=True, type=str, help='SharePoint user ID')
 
     delete_parser = parser.add_mutually_exclusive_group(required=False)
@@ -186,6 +178,7 @@ def parse_args():
 
     args = parser.parse_args()
     return args
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
