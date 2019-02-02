@@ -90,8 +90,11 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
 
     s = sharepy.connect(f"https://{sharepoint_host}", username=user, password=password)
 
-    if s.get(f"https://{sharepoint_host}").status_code == 403:
+    library_root = f"https://{sharepoint_host}/sites/{sharepoint_site}/{sharepoint_library}"
+    if s.get(library_root).status_code == 403:
         raise ValueError(f"Forbidden for {sharepoint_host} - authentication failed")
+    else:
+        logging.info("Access to library root confirmed for user %s: %s ", user, library_root)
 
     headers = {"accept": "application/json;odata=verbose",
            "content-type": "application/x-www-urlencoded; charset=UTF-8"}
