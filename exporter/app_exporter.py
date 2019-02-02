@@ -92,7 +92,7 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
 
     library_root = f"https://{sharepoint_host}/sites/{sharepoint_site}/{sharepoint_library}"
     if s.get(library_root).status_code == 403:
-        raise ValueError(f"Forbidden for {sharepoint_host} - authentication failed")
+        raise ValueError(f"Forbidden for {library_root} - authentication failed")
     else:
         logging.info("Access to library root confirmed for user %s: %s ", user, library_root)
 
