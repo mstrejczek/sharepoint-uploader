@@ -90,7 +90,7 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
 
     s = sharepy.connect(f"https://{sharepoint_host}", username=user, password=password)
 
-    library_root = f"https://{sharepoint_host}/sites/{sharepoint_site}/{sharepoint_library}"
+    library_root = f"https://{sharepoint_host}/{sharepoint_site}/{sharepoint_library}"
     if s.get(library_root).status_code == 403:
         raise ValueError(f"Forbidden for {library_root} - authentication failed")
     else:
@@ -111,11 +111,11 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
         relative_target = sharepoint_library +'/' + folder_name
 
         if relative_target not in created_folders:
-            p = s.post(f"https://{sharepoint_host}/sites/{sharepoint_site}/_api/web/folders",
-                json={
-                    "__metadata": { "type": "SP.Folder" },
-                    "ServerRelativeUrl": relative_target
-                })
+            p = s.post(f"https://{sharepoint_host}/{sharepoint_site}/_api/web/folders",
+                       json={
+                           "__metadata": { "type": "SP.Folder" },
+                           "ServerRelativeUrl": relative_target
+                       })
             if p.status_code < 200 or p.status_code >= 300:
                 logging.error("ERROR: Post to create folder %s resulted in status %s",
                               relative_target, p.status_code)
@@ -125,7 +125,7 @@ def upload_to_sharepoint(filenames, sharepoint_host, sharepoint_site, sharepoint
                 created_folders.add(relative_target)
                 logging.info("OK: Post to create folder %s resulted in status %s", relative_target, p.status_code)
 
-        p = s.post(f"https://{sharepoint_host}/sites/{sharepoint_site}/_api/web/getFolderByServerRelativeUrl('{sharepoint_library}/{folder_name}')/Files//add(url='{filename_object.name}', overwrite=true)", data=content, headers=headers)
+        p = s.post(f"https://{sharepoint_host}/{sharepoint_site}/_api/web/getFolderByServerRelativeUrl('{sharepoint_library}/{folder_name}')/Files//add(url='{filename_object.name}', overwrite=true)", data=content, headers=headers)
         if p.status_code < 200 or p.status_code >= 300:
             logging.error("ERROR: Post for file %s resulted in status %s", filename, p.status_code)
             failed_upload_count += 1
